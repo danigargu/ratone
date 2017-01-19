@@ -1,12 +1,11 @@
 # ratone
 A console for assemble/disassemble code using capstone/keystone
 
-![ratone](https://cloud.githubusercontent.com/assets/1675387/22099136/6359f3b8-de2a-11e6-93dd-962a016a18cc.png)
-
+![ratone](https://cloud.githubusercontent.com/assets/1675387/22099706/b8528a18-de2c-11e6-8623-79912abba00c.png)
 
 ## Interactive commands
 
-### asm
+### > asm
 ```
 (ratone)> asm
 Assemble instructions
@@ -21,7 +20,7 @@ optional arguments:
   -x              Interactive
 ```
 
-### disas
+### > disas
 ```
 (ratone)> disas
 Disassemble instructions
@@ -39,7 +38,7 @@ optional arguments:
 (ratone)>
 ```
 
-### set
+### > set
 ```
 usage: set <opt> <value>
 ```
