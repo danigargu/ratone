@@ -3,6 +3,12 @@ A console for assemble/disassemble code using capstone/keystone
 
 ![ratone](https://cloud.githubusercontent.com/assets/1675387/22099706/b8528a18-de2c-11e6-8623-79912abba00c.png)
 
+## Dependencies
+
+* Capstone python binding: http://www.capstone-engine.org/documentation.html
+* Keystone python binding: http://www.keystone-engine.org/docs/
+
+
 ## Interactive commands
 
 ### > asm
