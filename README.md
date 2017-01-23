@@ -51,6 +51,6 @@ usage: set <opt> <value>
 
 ### Available options:
 
-   * output: json, string, hex, c, b64
-   * arch: ppc, x16, x86, x64, ppc64, mips64, sparc, arm_t, arm64, mips32, hexagon, systemz, arm
-   * syntax: nasm (intel), att
+   * **output**: json, string, hex, c, b64
+   * **arch**: ppc, x16, x86, x64, ppc64, mips64, sparc, arm_t, arm64, mips32, hexagon, systemz, arm
+   * **syntax**: intel, nasm, masm, att

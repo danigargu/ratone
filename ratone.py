@@ -5,14 +5,15 @@
 #
 # 16/01/2017 - first version
 #
-# TO-DO:
-#   - Add little/big endian support
 #
+
+from __future__ import print_function
 
 import sys
 import json
-import argparse
 import shlex
+import argparse
+import traceback
 
 from keystone import *
 from capstone import *
@@ -20,68 +21,129 @@ from capstone import *
 from cmd    import Cmd
 from colors import red, green, blue, yellow
 
+KEYSTONE = 0
+CAPSTONE = 1
+
 def p_error(string):
 	print("[%s] %s" % (red("-"), string))
 
 def p_info(string):
 	print("[%s] %s" % (yellow("*"), string))
 
+def p_result(string):
+	print(green(string))
+
 class RatoneCmd(Cmd):
-	intro  = 'Welcome to ratone. write "help" to help'
-	prompt = yellow('(ratone)> ')
+	def __init__(self):
+		Cmd.__init__(self)
+		self.intro  = 'Welcome to ratone. write "help" to help'
+		self.prompt = yellow('(ratone)> ')
 
-	config = {
-		'arch':    'x86',       # default arch
-		'output':  'string',    # default output format
-		'syntax':  'nasm'       # default ASM syntax
-	}
+		self.config = {
+			'arch':    'x86',       # default arch
+			'output':  'string',    # default output format
+			'syntax':  'intel',     # default ASM syntax
+			'endian':  'little'
+		}
 
-	# Keystone - Assembler
-	k_archs = {
-		'x16':     {'arch': KS_ARCH_X86,     'mode': KS_MODE_16},
-		'x86':     {'arch': KS_ARCH_X86,     'mode': KS_MODE_32},
-		'x64':     {'arch': KS_ARCH_X86,     'mode': KS_MODE_64},
-		'arm':     {'arch': KS_ARCH_ARM,     'mode': KS_MODE_ARM},
-		'arm_t':   {'arch': KS_ARCH_ARM,     'mode': KS_MODE_THUMB},
-		'arm64':   {'arch': KS_ARCH_ARM64,   'mode': KS_MODE_LITTLE_ENDIAN},
-		'mips32':  {'arch': KS_ARCH_MIPS,    'mode': KS_MODE_MIPS32},
-		'mips64':  {'arch': KS_ARCH_MIPS,    'mode': KS_MODE_MIPS64},
-		'ppc':     {'arch': KS_ARCH_PPC,     'mode': KS_MODE_PPC32},
-		'ppc64':   {'arch': KS_ARCH_PPC,     'mode': KS_MODE_PPC64},
-		'hexagon': {'arch': KS_ARCH_HEXAGON, 'mode': KS_MODE_BIG_ENDIAN},
-		'sparc':   {'arch': KS_ARCH_SPARC,   'mode': KS_MODE_SPARC32 | KS_MODE_LITTLE_ENDIAN},
-		'systemz': {'arch': KS_ARCH_SYSTEMZ, 'mode': KS_MODE_BIG_ENDIAN}
-	}
+		self.endian = (
+			{"little": KS_MODE_LITTLE_ENDIAN, "big": KS_MODE_BIG_ENDIAN},
+			{"little": CS_MODE_LITTLE_ENDIAN, "big": CS_MODE_BIG_ENDIAN}
+		)
 
-	# Capstone - Disassembler
-	c_archs = {
-		'x16':     {'arch': CS_ARCH_X86,     'mode': CS_MODE_16},
-		'x86':     {'arch': CS_ARCH_X86,     'mode': CS_MODE_32},
-		'x64':     {'arch': CS_ARCH_X86,     'mode': CS_MODE_64},
-		'arm':     {'arch': CS_ARCH_ARM,     'mode': CS_MODE_ARM},
-		'arm_t':   {'arch': CS_ARCH_ARM,     'mode': CS_MODE_THUMB},
-		'arm64':   {'arch': CS_ARCH_ARM64,   'mode': CS_MODE_LITTLE_ENDIAN},
-		'mips32':  {'arch': CS_ARCH_MIPS,    'mode': CS_MODE_MIPS32},
-		'mips64':  {'arch': CS_ARCH_MIPS,    'mode': CS_MODE_MIPS64},
-	}
+		self.asm_syntax = {
+			'intel': KS_OPT_SYNTAX_INTEL,
+			'nasm':  KS_OPT_SYNTAX_NASM,
+			'masm':  KS_OPT_SYNTAX_MASM,
+			'att':   KS_OPT_SYNTAX_ATT
+		}
 
-	valid_opts = {
-		'arch':   list(set(k_archs.keys()+c_archs.keys())),
-		'output': ['json', 'string', 'hex', 'c', 'b64'],
-		'syntax': ['nasm', 'att']
-	}
+		self.archs = (
+			{ # Keystone - Assembler
+				'x16':     (KS_ARCH_X86,     KS_MODE_16),
+				'x86':     (KS_ARCH_X86,     KS_MODE_32),
+				'x64':     (KS_ARCH_X86,     KS_MODE_64),
+				'arm':     (KS_ARCH_ARM,     KS_MODE_ARM),
+				'arm_t':   (KS_ARCH_ARM,     KS_MODE_THUMB),
+				'arm64':   (KS_ARCH_ARM64,   KS_MODE_LITTLE_ENDIAN),
+				'mips32':  (KS_ARCH_MIPS,    KS_MODE_MIPS32),
+				'mips64':  (KS_ARCH_MIPS,    KS_MODE_MIPS64),
+				'ppc32':   (KS_ARCH_PPC,     KS_MODE_PPC32),
+				'ppc64':   (KS_ARCH_PPC,     KS_MODE_PPC64),
+				'hexagon': (KS_ARCH_HEXAGON, KS_MODE_BIG_ENDIAN),
+				'sparc':   (KS_ARCH_SPARC,   KS_MODE_SPARC32),
+				'sparc64': (KS_ARCH_SPARC,   KS_MODE_SPARC64),
+				'systemz': (KS_ARCH_SYSTEMZ, KS_MODE_BIG_ENDIAN)
+			},
+			{ # Capstone - Disassembler
+				'x16':     (CS_ARCH_X86,     CS_MODE_16),
+				'x86':     (CS_ARCH_X86,     CS_MODE_32),
+				'x64':     (CS_ARCH_X86,     CS_MODE_64),
+				'arm':     (CS_ARCH_ARM,     CS_MODE_ARM),
+				'arm_t':   (CS_ARCH_ARM,     CS_MODE_THUMB),
+				'arm64':   (CS_ARCH_ARM64,   CS_MODE_LITTLE_ENDIAN),
+				'mips32':  (CS_ARCH_MIPS,    CS_MODE_MIPS32),
+				'mips64':  (CS_ARCH_MIPS,    CS_MODE_MIPS64),
+			}
+		)
 
-	opts_ks = k_archs[config['arch']]
-	opts_cs = c_archs[config['arch']]
+		self.valid_opts = {
+			'arch':   list(set(self.archs[CAPSTONE].keys() + self.archs[KEYSTONE].keys())),
+			'syntax': self.asm_syntax.keys(),
+			'output': ['json', 'string', 'hex', 'c', 'b64'],
+			'endian': ['little', 'big']
+		}
 
-	ks = Ks(opts_ks['arch'], opts_ks['mode'])
-	cs = Cs(opts_cs['arch'], opts_cs['mode'])
+		self.aliases = {
+			'd': self.do_disas,
+			'a': self.do_asm,
+			's': self.do_set
+		}
 
-	# ----------------------------------------------------
+		self.ks = None # Keystone
+		self.cs = None # Capstone
+		self.update_arch_mode(False)
+
+	def is_valid_endian(self):
+		s_arch = self.config['arch']
+		endian = self.config['endian']
+
+		if s_arch in ('x16', 'x86', 'x64', 'arm64') and endian != 'little' or \
+		   s_arch in ('ppc32', 'ppc64', 'systemz') and endian != 'big':
+			return False
+		return True
+
+	def update_arch_mode(self, verbose=True):
+		s_arch = self.config['arch']
+		if not self.is_valid_endian():
+			p_error("Invalid endian for '%s'" % s_arch)
+			return
+		
+		# Keystone config
+		if s_arch in self.archs[KEYSTONE].keys():			
+			arch, mode = self.archs[KEYSTONE][self.config['arch']]
+			endian = self.endian[KEYSTONE][self.config['endian']]
+			self.ks = Ks(arch, mode|endian)
+			if verbose:
+				p_info("Keystone: switched to '%s'" % s_arch)
+		else:
+			p_error("The selected arch is not available in Keystone (assembler)")
+			self.ks = None
+
+		# Capstone config
+		if s_arch in self.archs[CAPSTONE].keys():
+			arch, mode = self.archs[CAPSTONE][self.config['arch']]
+			endian = self.endian[CAPSTONE][self.config['endian']]
+			self.cs = Cs(arch, mode|endian)
+			if verbose:
+				p_info("Capstone: switched to '%s'" % s_arch)
+		else:
+			p_error("The selected arch is not available in Capstone (disassembler)")
+			self.cs = None
 
 	def make_c_byte_array(self, buf):
 		buf_len = len(buf)-1
-		output =  "unsigned char code[] = {\n\t"
+		output  = "unsigned char code[] = {\n\t"
 
 		for i in range(len(buf)):
 			output += "0x%02X" % buf[i-1]
@@ -94,11 +156,8 @@ class RatoneCmd(Cmd):
 		output += "}"
 		return output
 
-	def set_asm_syntax(self, syntax):
-		if syntax == 'nasm':
-			self.ks.syntax = KS_OPT_SYNTAX_NASM
-		elif syntax == 'att':
-			self.ks.syntax = KS_OPT_SYNTAX_ATT
+	def update_asm_syntax(self, syntax):
+		self.ks.syntax = self.asm_syntax[self.config['syntax']]
 
 	def make_asm_output(self, encoding, count, verbose=True):
 		output = ''
@@ -120,23 +179,6 @@ class RatoneCmd(Cmd):
 			output = json.dumps(list(buf))
 		return output
 
-	def switch_arch(self):
-		selected_arch = self.config['arch']
-
-		if selected_arch in self.k_archs:
-			k_opts  = self.k_archs[selected_arch]
-			self.ks = Ks(k_opts['arch'], k_opts['mode'])
-		else:
-			p_error("The selected arch is not available in Keystone")
-			#self.ks = None
-
-		if selected_arch in self.c_archs:
-			c_opts  = self.c_archs[selected_arch]
-			self.cs = Cs(c_opts['arch'], c_opts['mode'])
-		else:
-			p_error("The selected arch is not available in Capstone")
-			#self.cs = None
-
 	def interactive_asm(self):
 		out = bytearray()
 		total_count = 0
@@ -150,7 +192,7 @@ class RatoneCmd(Cmd):
 				output = self.make_asm_output(encoding, count, verbose=False)
 				out += bytearray(encoding)
 				total_count += count
-				print green(output)
+				p_result(output)
 
 			except KsError, e:
 				p_error("%s" % e)
@@ -164,7 +206,7 @@ class RatoneCmd(Cmd):
 	def help_asm(self):
 		help_msg = (
 			'Assemble instructions\n\n'
-			'usage: asm [-i INPUT_FILE] [-o OUTPUT_FILE] [-c CODE] [-x]\n\n'
+			'usage: a/asm [-i INPUT_FILE] [-o OUTPUT_FILE] [-c CODE] [-x]\n\n'
 			'optional arguments:\n'
 			'  -h, --help      show this help message and exit\n'
 			'  -i INPUT_FILE   Input file\n'
@@ -194,23 +236,26 @@ class RatoneCmd(Cmd):
 				parser.print_help()
 				return
 
+			if not self.ks:
+				p_error("Selected arch not available in Keystone (assembler)")
+				return
+
 			if args.code:
-				encoding, count = self.ks.asm(args.code)
-				result = self.make_asm_output(encoding, count)
-				print green(result)
+				result, count = self.ks.asm(args.code)
+				output = self.make_asm_output(result, count)
+				p_result(output)
 
 			elif args.input_file:
 				code = open(args.input_file, 'rb').read()
-				encoding, count = self.ks.asm(code)
-				output = self.make_asm_output(encoding, count)
-				print green(output)
+				result, count = self.ks.asm(code)
+				output = self.make_asm_output(result, count)
+				p_result(output)
 
 			elif args.interactive:
 				result, count = self.interactive_asm()
-
 				if count > 0:
 					output = self.make_asm_output(result, count, verbose=True)
-					print green(output)
+					p_result(output)
 
 			if args.output_file:
 				if not result:
@@ -218,8 +263,7 @@ class RatoneCmd(Cmd):
 					return
 
 				with open(args.output_file, 'wb') as f:
-					f.write(result)
-
+					f.write(bytearray(result))
 				p_info("Results saved to: %s" % args.output_file)
 
 		except SystemExit:
@@ -228,11 +272,11 @@ class RatoneCmd(Cmd):
 			p_error("ERROR: %s" % e)
 		except Exception, e:
 			p_error("ERROR: %s" % e)
-				
+
 	def help_disas(self):
 		help_msg = (
 			'Disassemble instructions\n\n'
-			'usage: disas [-h] [-b BASE_ADDR] [-i INPUT_FILE] [-o OUTPUT_FILE]\n'
+			'usage: d/disas [-h] [-b BASE_ADDR] [-i INPUT_FILE] [-o OUTPUT_FILE]\n'
 			'             [-c HEXCODE]\n\n'
 			'optional arguments:\n'
 			'  -h, --help      show this help message and exit\n'
@@ -261,6 +305,10 @@ class RatoneCmd(Cmd):
 				parser.print_help()
 				return
 
+			if not self.cs:
+				p_error("Selected arch not available in Capstone (disassembler)")
+				return
+
 			output = ""
 			base_addr = self.parse_addr(args.base_addr)
 
@@ -276,10 +324,14 @@ class RatoneCmd(Cmd):
 				output = self.disas_code(base_addr, code)
 
 			if args.output_file:
-				open(args.output_file, 'wb').write(output)
+				with open(args.output_file, 'wb') as f:
+					f.write(output)
+				p_info("Results saved to: %s" % args.output_file)
 
 		except SystemExit:
 			pass
+		except Exception, e:
+			p_error("ERROR: %s" % e)
 
 	def parse_addr(self, addr):
 		base_addr = 0
@@ -295,28 +347,26 @@ class RatoneCmd(Cmd):
 			for i in self.cs.disasm(code, b_addr):
 				code = "0x%x:\t%s\t%s" % (i.address, i.mnemonic, i.op_str)
 				output += "%s\n" % code
-				print code
-		except (TypeError, CsError), e:
+				print(code)
+		except CsError, e:
 			p_error("ERROR: %s" % e)
-
 		return output
 
 	def do_options(self, line):
 		"Show config"
-
 		print("ARCH            : %s" % self.config['arch'])
+		print("ENDIAN          : %s" % self.config['endian'])
 		print("SYNTAX          : %s" % self.config['syntax'])
 		print("OUTPUT FORMAT   : %s" % self.config['output'])
 
 	def do_set(self, line):
 		"Set config vars"
 
-		args = line.split(" ")
+		args = shlex.split(line)
 		if len(args) < 2:
-			print "usage: set <opt> <value>"
+			print("usage: set <opt> <value>")
 			return
 
-		args = map(str.strip, args)
 		args = map(str.lower, args)
 		opt, value = args[:2]
 
@@ -324,31 +374,30 @@ class RatoneCmd(Cmd):
 			p_info("Invalid option, availables: %s" % self.valid_opts.keys())
 			return
 
-		if opt == 'arch':
-			if value in self.k_archs.keys() or value in self.c_archs.keys():
-				self.config['arch'] = value
-				self.switch_arch()
+		if opt in ('arch', 'output', 'endian', 'syntax'):
+			if value in self.valid_opts[opt]:
+				self.config[opt] = value
 			else:
-				availables = ', '.join(self.valid_opts['arch'])
-				p_info("Invalid arch, availables:\n %s" % availables)
+				availables = ', '.join(self.valid_opts[opt])
+				p_info("Invalid %s, availables:\n %s" % (opt, availables))
 				return
 
-		elif opt == 'output':
-			if value in self.valid_opts['output']:
-				self.config['output'] = value
-			else:
-				availables = ', '.join(self.valid_opts['output'])
-				p_info("Invalid output format, availables:\n %s" % availables)
-				return
-
+		if opt in ('arch', 'endian'):
+			self.update_arch_mode()
 		elif opt == 'syntax':
-			if value in self.valid_opts['syntax']:
-				self.set_asm_syntax(value)
-				print(green("DONE"))
-			else:
-				availables = ', '.join(self.valid_opts['syntax'])
-				p_info("Invalid ASM syntax, availables:\n%s" % availables)
+			self.update_asm_syntax()
 
+	def default(self, line):
+		cmd, arg, line = self.parseline(line)
+		if cmd in self.aliases:
+			self.aliases[cmd](arg)
+		else:
+			print("*** Unknown syntax: %s" % line)
+
+	def do_help(self, arg):
+		if arg in self.aliases:
+			arg = self.aliases[arg].__name__[3:]
+		Cmd.do_help(self, arg)
 
 	def complete_set(self, text, line, begidx, endidx):
 		completions = []
@@ -368,7 +417,7 @@ class RatoneCmd(Cmd):
 		return completions
 
 	def do_EOF(self, line):
-		print "Bye"
+		print("Bye")
 		return True
 
 def enable_osx_completion():
@@ -383,17 +432,14 @@ def enable_osx_completion():
 
 def main():
 	try:
-		"""
-		if sys.platform == 'darwin':
-			enable_osx_completion()
-		"""
 		if len(sys.argv) > 1:
 			RatoneCmd().onecmd(' '.join(sys.argv[1:]))
 		else:
 			RatoneCmd().cmdloop()
 	except KeyboardInterrupt:
 		print("Bye")
-
+	except Exception, e:
+		p_error("ERROR: Unhandled exception: %s" % traceback.format_exc())
 
 if __name__ == '__main__':
 	main()
