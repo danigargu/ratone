@@ -7,6 +7,7 @@ A console for assemble/disassemble code using capstone/keystone
 
 * Capstone python binding: http://www.capstone-engine.org/documentation.html
 * Keystone python binding: http://www.keystone-engine.org/docs/
+* ansicolors python module: pip install ansicolors
 
 
 ## Interactive commands
